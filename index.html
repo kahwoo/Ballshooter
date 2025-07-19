@@ -1,325 +1,467 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-            <title>Holedown MVP</title>
-                <style>
-                        html, body { margin: 0; padding: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; }
-                                canvas { display: block; touch-action: none; background: #111; }
-                                        #ui-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; user-select: none; }
-                                                #game-over, #restart-btn { position: absolute; left: 50%; transform: translateX(-50%); display: none; }
-                                                        #game-over { top: 45%; font-size: 3rem; color: #f33; }
-                                                                #restart-btn { top: 55%; font-size: 1.5rem; padding: 0.5em 1em; cursor: pointer; background: #f33; color: #000; border: none; border-radius: 4px; pointer-events: all; }
-                                                                        #score { position: absolute; top: 10px; left: 10px; font-size: 1.5rem; color: #fff; }
-                                                                            </style>
-                                                                            </head>
-                                                                            <body>
-                                                                                <canvas></canvas>
-                                                                                    <div id="ui-container">
-                                                                                            <div id="score"></div>
-                                                                                                    <div id="game-over">Game Over</div>
-                                                                                                            <button id="restart-btn">Restart</button>
-                                                                                                                </div>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Holedown MVP v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --primary-color: #0ff;
+  --danger-color: #f33;
+  --dark-bg: #111;
+  --light-text: #eee;
+  --extra-ball-color: #fff;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+  color: var(--light-text);
+  font-family: 'Poppins', sans-serif;
+}
+.hidden { display: none !important; }
+.overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.7);
+  user-select: none;
+}
+.overlay h1 { font-size: 3rem; margin-bottom: 20px; color: var(--primary-color); }
+.overlay button {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.2rem;
+  font-weight: bold;
+  padding: 12px 24px;
+  margin: 8px;
+  min-width: 200px;
+  cursor: pointer;
+  border: 2px solid var(--primary-color);
+  background: transparent;
+  color: var(--primary-color);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+.overlay button:hover { background: var(--primary-color); color: var(--dark-bg); }
+#game-over-text { color: var(--danger-color); }
+#restart-btn { border-color: var(--danger-color); color: var(--danger-color); }
+#restart-btn:hover { background: var(--danger-color); color: var(--light-text); }
+canvas { display: block; touch-action: none; background: var(--dark-bg); }
+#score-ui {
+  position: absolute;
+  top: 15px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 2rem;
+  font-weight: bold;
+  color: #fff;
+  pointer-events: none;
+}
+#ball-count-ui {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--primary-color);
+  pointer-events: none;
+}
+#fast-forward {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  font-size: 1.2rem;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #0ff;
+  color: #000;
+  font-weight: bold;
+  z-index: 10;
+  user-select: none;
+}
+</style>
+</head>
+<body>
+<canvas class="hidden"></canvas>
+<div id="score-ui" class="hidden">0</div>
+<div id="ball-count-ui" class="hidden"></div>
+<div id="menu-container" class="overlay">
+  <h1>Block Breaker</h1>
+  <button data-difficulty="easy">Easy</button>
+  <button data-difficulty="normal">Normal</button>
+  <button data-difficulty="hard">Hard</button>
+  <button data-difficulty="insane">Insane</button>
+</div>
+<div id="game-over-container" class="overlay hidden">
+  <h1 id="game-over-text">Game Over</h1>
+  <button id="restart-btn">Main Menu</button>
+</div>
+<button id="fast-forward" class="hidden">⏩</button>
+<script>
+(() => {
+const canvas = document.querySelector('canvas');
+const ctx = canvas.getContext('2d');
+const menuContainer = document.getElementById('menu-container');
+const gameOverContainer = document.getElementById('game-over-container');
+const scoreUI = document.getElementById('score-ui');
+const ballCountUI = document.getElementById('ball-count-ui');
+const restartBtn = document.getElementById('restart-btn');
+const fastBtn = document.getElementById('fast-forward');
+const difficultySettings = {
+  easy: { hpScale: t => 1, spawnChance: 0.4, balls: 15 },
+  normal: { hpScale: t => Math.max(1, Math.floor(t / 3)), spawnChance: 0.6, balls: 8 },
+  hard: { hpScale: t => Math.max(1, Math.floor(t / 2)), spawnChance: 0.7, balls: 5 },
+  insane: { hpScale: t => Math.max(1, t), spawnChance: 0.8, balls: 5 }
+};
+let currentDifficulty, W, H, blockSize;
+const ROW_COUNT = 7;
+const BALL_SPEED = 9;
+const BALL_RADIUS = 6;
+let blocks, balls, ballCount, score, turnNumber;
+let aimAngle, shooterX;
+let canShoot, turnInProgress, gameOver;
+let isAiming, ballShootTimer;
+let speedMultiplier = 1;
+let firedBalls = 0;
+let returnedBalls = 0;
+let fastForwardHeldStartTime = 0;
+let fastForwardInterval;
+const MAX_SPEED_MULTIPLIER = 10;
+const SPEED_INCREMENT_RATE = 0.5;
+const SPEED_UPDATE_INTERVAL = 100;
 
-                                                                                                                <script>
-                                                                                                                (() => {
-                                                                                                                        // --- SETUP ---
-                                                                                                                            const canvas = document.querySelector('canvas');
-                                                                                                                                const ctx = canvas.getContext('2d');
-                                                                                                                                    const gameOverUI = document.getElementById('game-over');
-                                                                                                                                        const restartBtn = document.getElementById('restart-btn');
-                                                                                                                                            const scoreUI = document.getElementById('score');
+function startGame(difficulty) {
+  currentDifficulty = difficultySettings[difficulty];
+  menuContainer.classList.add('hidden');
+  gameOverContainer.classList.add('hidden');
+  canvas.classList.remove('hidden');
+  scoreUI.classList.remove('hidden');
+  ballCountUI.classList.remove('hidden');
+  fastBtn.classList.add('hidden');
+  init();
+}
 
-                                                                                                                                                let W, H, blockSize;
-                                                                                                                                                    const ROW_COUNT = 7;
-                                                                                                                                                        const BALL_SPEED = 8;
-                                                                                                                                                            const BALL_RADIUS = 5;
+function showMenu() {
+  canvas.classList.add('hidden');
+  scoreUI.classList.add('hidden');
+  ballCountUI.classList.add('hidden');
+  gameOverContainer.classList.add('hidden');
+  menuContainer.classList.remove('hidden');
+  fastBtn.classList.add('hidden');
+  stopFastForwardProgressive();
+}
 
-                                                                                                                                                                // --- GAME STATE ---
-                                                                                                                                                                    let blocks, balls;
-                                                                                                                                                                        let ballCount, score;
-                                                                                                                                                                            let aimAngle;
-                                                                                                                                                                                let canShoot, turnInProgress, gameOver;
-                                                                                                                                                                                    let ballShootIndex, ballShootTimer;
-                                                                                                                                                                                        let shooterX;
+function init() {
+  resize();
+  blocks = [];
+  balls = [];
+  score = 0;
+  turnNumber = 0;
+  ballCount = currentDifficulty.balls;
+  aimAngle = -Math.PI / 2;
+  shooterX = W / 2;
+  canShoot = true;
+  turnInProgress = false;
+  gameOver = false;
+  firedBalls = 0;
+  returnedBalls = 0;
+  scoreUI.textContent = 0;
+  updateBallCountUI();
+  addNewRow();
+  gameLoop();
+}
 
-                                                                                                                                                                                            function init() {
-                                                                                                                                                                                                        resize();
-                                                                                                                                                                                                                blocks = [];
-                                                                                                                                                                                                                        balls = [];
-                                                                                                                                                                                                                                ballCount = 5;
-                                                                                                                                                                                                                                        score = 0;
-                                                                                                                                                                                                                                                aimAngle = -Math.PI / 2;
-                                                                                                                                                                                                                                                        canShoot = true;
-                                                                                                                                                                                                                                                                turnInProgress = false;
-                                                                                                                                                                                                                                                                        gameOver = false;
-                                                                                                                                                                                                                                                                                shooterX = W / 2;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+  blockSize = W / ROW_COUNT;
+}
 
-                                                                                                                                                                                                                                                                                        gameOverUI.style.display = 'none';
-                                                                                                                                                                                                                                                                                                restartBtn.style.display = 'none';
-                                                                                                                                                                                                                                                                                                        scoreUI.textContent = score;
+function updateBallCountUI() {
+  ballCountUI.textContent = `Balls: ${ballCount - firedBalls + returnedBalls}`;
+}
 
-                                                                                                                                                                                                                                                                                                                addNewRow();
-                                                                                                                                                                                                                                                                                                                        gameLoop();
-                                                                                                                                                                                            }
-                                                                                                                                                                                                
-                                                                                                                                                                                                    function resize() {
-                                                                                                                                                                                                                W = window.innerWidth;
-                                                                                                                                                                                                                        H = window.innerHeight;
-                                                                                                                                                                                                                                canvas.width = W;
-                                                                                                                                                                                                                                        canvas.height = H;
-                                                                                                                                                                                                                                                blockSize = W / ROW_COUNT;
-                                                                                                                                                                                                    }
+function addNewRow() {
+  turnNumber++;
+  blocks.forEach(b => b.y += blockSize);
+  if (blocks.some(b => b.y + blockSize > H)) {
+    endGame();
+    return;
+  }
+  let bombSpawnChance = 0.05;
+  if (turnNumber > 10) {
+    bombSpawnChance += 0.05;
+  }
+  for (let i = 0; i < ROW_COUNT; i++) {
+    let blockAdded = false;
+    if (Math.random() < bombSpawnChance) {
+      blocks.push({
+        x: i * blockSize,
+        y: 0,
+        w: blockSize,
+        h: blockSize,
+        hp: 1,
+        type: 'bomb'
+      });
+      blockAdded = true;
+    }
+    if (!blockAdded && Math.random() < currentDifficulty.spawnChance) {
+      let blockType = 'normal';
+      if (turnNumber % 3 === 0 && Math.random() < 0.2) blockType = 'extra';
+      blocks.push({
+        x: i * blockSize,
+        y: 0,
+        w: blockSize,
+        h: blockSize,
+        hp: blockType === 'normal' ? currentDifficulty.hpScale(turnNumber) : 1,
+        type: blockType
+      });
+    }
+  }
+}
 
-                                                                                                                                                                                                        // --- GAME LOGIC ---
-                                                                                                                                                                                                            function addNewRow() {
-                                                                                                                                                                                                                        if (gameOver) return;
-                                                                                                                                                                                                                                score++;
-                                                                                                                                                                                                                                        scoreUI.textContent = score;
+function shootBalls() {
+  if (!canShoot || turnInProgress || gameOver) return;
+  turnInProgress = true;
+  canShoot = false;
+  firedBalls = 0;
+  returnedBalls = 0;
+  fastBtn.classList.remove('hidden');
+  let ballShootIndex = 0;
+  ballShootTimer = setInterval(() => {
+    if (ballShootIndex >= ballCount) {
+      clearInterval(ballShootTimer);
+      return;
+    }
+    balls.push({
+      x: shooterX, y: H - 20,
+      vx: Math.cos(aimAngle) * BALL_SPEED, vy: Math.sin(aimAngle) * BALL_SPEED
+    });
+    firedBalls++;
+    updateBallCountUI();
+    ballShootIndex++;
+  }, 100);
+}
 
-                                                                                                                                                                                                                                                // Move existing blocks down
-                                                                                                                                                                                                                                                        blocks.forEach(b => b.y += blockSize);
-                                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                                        // Check for game over condition *after* moving blocks
-                                                                                                                                                                                                                                                                                if (blocks.some(b => b.y + blockSize > H)) {
-                                                                                                                                                                                                                                                                                                endGame();
-                                                                                                                                                                                                                                                                                                            return;
-                                                                                                                                                                                                                                                                                }
+function endGame() {
+  gameOver = true;
+  gameOverContainer.classList.remove('hidden');
+  fastBtn.classList.add('hidden');
+  clearInterval(ballShootTimer);
+  stopFastForwardProgressive();
+}
 
-                                                                                                                                                                                                                                                                                        // Add a new row at the top
-                                                                                                                                                                                                                                                                                                for (let i = 0; i < ROW_COUNT; i++) {
-                                                                                                                                                                                                                                                                                                                if (Math.random() < 0.7) { // 70% chance of a block appearing
-                                                                                                                                                                                                                                                                                                                                blocks.push({
-                                                                                                                                                                                                                                                                                                                                                        x: i * blockSize,
-                                                                                                                                                                                                                                                                                                                                                                            y: 0,
-                                                                                                                                                                                                                                                                                                                                                                                                w: blockSize,
-                                                                                                                                                                                                                                                                                                                                                                                                                    h: blockSize,
-                                                                                                                                                                                                                                                                                                                                                                                                                                        hp: score // HP scales with the score/turn number
-                                                                                                                                                                                                                                                                                                                                });
-                                                                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                            }
+function update() {
+  for (let ballIndex = 0; ballIndex < balls.length; ballIndex++) {
+    const ball = balls[ballIndex];
+    let nextX = ball.x + ball.vx * speedMultiplier;
+    let nextY = ball.y + ball.vy * speedMultiplier;
+    let collided = false;
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const block = blocks[i];
+      // AABB circle collision detection with predicted position
+      const closestX = Math.max(block.x, Math.min(nextX, block.x + block.w));
+      const closestY = Math.max(block.y, Math.min(nextY, block.y + block.h));
+      const dx = nextX - closestX;
+      const dy = nextY - closestY;
+      if (dx * dx + dy * dy < BALL_RADIUS * BALL_RADIUS) {
+        collided = true;
+        block.hp--;
+        // Determine collision side by comparing previous position to block edges
+        const prevX = ball.x;
+        const prevY = ball.y;
+        const insideX = prevX >= block.x && prevX <= block.x + block.w;
+        const insideY = prevY >= block.y && prevY <= block.y + block.h;
+        if (!insideX) ball.vx *= -1;
+        if (!insideY) ball.vy *= -1;
+        if (block.hp <= 0) {
+          if (block.type === 'extra') {
+            ballCount++;
+          } else if (block.type === 'bomb') {
+            const bx = block.x + block.w / 2;
+            const by = block.y + block.h / 2;
+            blocks = blocks.filter(b => {
+              const bCenterX = b.x + b.w / 2;
+              const bCenterY = b.y + b.h / 2;
+              const distSq = (bCenterX - bx) ** 2 + (bCenterY - by) ** 2;
+              const range = blockSize * 1.5;
+              return distSq > range * range || b === block;
+            });
+          }
+          blocks.splice(i, 1);
+          score++;
+          scoreUI.textContent = score;
+        }
+        break;
+      }
+    }
+    if (!collided) {
+      ball.x = nextX;
+      ball.y = nextY;
+    }
+    if (ball.x - BALL_RADIUS < 0) {
+      ball.x = BALL_RADIUS;
+      ball.vx *= -1;
+    }
+    if (ball.x + BALL_RADIUS > W) {
+      ball.x = W - BALL_RADIUS;
+      ball.vx *= -1;
+    }
+    if (ball.y - BALL_RADIUS < 0) {
+      ball.y = BALL_RADIUS;
+      ball.vy *= -1;
+    }
+  }
+  const returningBalls = balls.filter(b => b.y - BALL_RADIUS < H);
+  const newlyReturnedBalls = balls.length - returningBalls.length;
+  returnedBalls += newlyReturnedBalls;
+  if (newlyReturnedBalls > 0) {
+    updateBallCountUI();
+  }
+  if (turnInProgress && balls.length > 0 && returningBalls.length === 0) {
+    shooterX = balls[0].x;
+    if (shooterX < BALL_RADIUS) shooterX = BALL_RADIUS;
+    if (shooterX > W - BALL_RADIUS) shooterX = W - BALL_RADIUS;
+    balls = [];
+    turnInProgress = false;
+    canShoot = true;
+    stopFastForwardProgressive();
+    firedBalls = 0;
+    returnedBalls = 0;
+    updateBallCountUI();
+    addNewRow();
+    fastBtn.classList.add('hidden');
+  } else {
+    balls = returningBalls;
+  }
+}
 
-                                                                                                                                                                                                                function shootBalls() {
-                                                                                                                                                                                                                            if (!canShoot || turnInProgress || gameOver) return;
-                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                            turnInProgress = true;
-                                                                                                                                                                                                                                                    canShoot = false;
-                                                                                                                                                                                                                                                            ballShootIndex = 0;
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (canShoot && !turnInProgress) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 10]);
+    ctx.beginPath();
+    ctx.moveTo(shooterX, H - 20);
+    ctx.lineTo(shooterX + Math.cos(aimAngle) * H, H - 20 + Math.sin(aimAngle) * H);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.round(blockSize / 3)}px Poppins`;
+  blocks.forEach(b => {
+    if (b.type === 'extra') {
+      ctx.fillStyle = 'var(--extra-ball-color)';
+      ctx.fillRect(b.x + 2, b.y + 2, b.w - 4, b.h - 4);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('➕', b.x + b.w / 2, b.y + b.h / 2);
+    } else if (b.type === 'bomb') {
+      ctx.fillStyle = 'orange';
+      ctx.fillRect(b.x + 2, b.y + 2, b.w - 4, b.h - 4);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('💣', b.x + b.w / 2, b.y + b.h / 2);
+    } else {
+      ctx.fillStyle = `hsl(${200 + b.hp * 10}, 80%, 50%)`;
+      ctx.fillRect(b.x + 2, b.y + 2, b.w - 4, b.h - 4);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(b.hp, b.x + b.w / 2, b.y + b.h / 2);
+    }
+  });
+  balls.forEach(b => {
+    ctx.fillStyle = '#0ff';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, BALL_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
 
-                                                                                                                                                                                                                                                                    ballShootTimer = setInterval(() => {
-                                                                                                                                                                                                                                                                                    if (ballShootIndex >= ballCount) {
-                                                                                                                                                                                                                                                                                                        clearInterval(ballShootTimer);
-                                                                                                                                                                                                                                                                                                                        return;
-                                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                                balls.push({
-                                                                                                                                                                                                                                                                                                                    x: shooterX,
-                                                                                                                                                                                                                                                                                                                                    y: H - 20,
-                                                                                                                                                                                                                                                                                                                                                    vx: Math.cos(aimAngle) * BALL_SPEED,
-                                                                                                                                                                                                                                                                                                                                                                    vy: Math.sin(aimAngle) * BALL_SPEED
-                                                                                                                                                                                                                                                                                                });
-                                                                                                                                                                                                                                                                                                            ballShootIndex++;
-                                                                                                                                                                                                                                                                    }, 120); // 120ms delay between balls
-                                                                                                                                                                                                                }
+function gameLoop() {
+  if (gameOver) return;
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
 
-                                                                                                                                                                                                                    function endGame() {
-                                                                                                                                                                                                                                gameOver = true;
-                                                                                                                                                                                                                                        gameOverUI.style.display = 'block';
-                                                                                                                                                                                                                                                restartBtn.style.display = 'block';
-                                                                                                                                                                                                                                                        clearInterval(ballShootTimer);
-                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                        
-                                                                                                                                                                                                                            // --- UPDATE & DRAW ---
-                                                                                                                                                                                                                                function update() {
-                                                                                                                                                                                                                                            if (gameOver) return;
+function getAimAngle(e) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const dx = (clientX - rect.left) - shooterX;
+  const dy = (clientY - rect.top) - (H - 20);
+  let angle = Math.atan2(dy, dx);
+  if (angle > -0.1) angle = -0.1;
+  if (angle < -Math.PI + 0.1) angle = -Math.PI + 0.1;
+  return angle;
+}
 
-                                                                                                                                                                                                                                                    balls.forEach(ball => {
-                                                                                                                                                                                                                                                                    ball.x += ball.vx;
-                                                                                                                                                                                                                                                                                ball.y += ball.vy;
+function onPointerDown(e) {
+  if (!canShoot || turnInProgress || gameOver) return;
+  isAiming = true;
+  aimAngle = getAimAngle(e);
+}
 
-                                                                                                                                                                                                                                                                                            // Wall collisions
-                                                                                                                                                                                                                                                                                                        if (ball.x - BALL_RADIUS < 0) { ball.x = BALL_RADIUS; ball.vx *= -1; }
-                                                                                                                                                                                                                                                                                                                    if (ball.x + BALL_RADIUS > W) { ball.x = W - BALL_RADIUS; ball.vx *= -1; }
-                                                                                                                                                                                                                                                                                                                                if (ball.y - BALL_RADIUS < 0) { ball.y = BALL_RADIUS; ball.vy *= -1; }
+function onPointerMove(e) {
+  if (isAiming) aimAngle = getAimAngle(e);
+}
 
-                                                                                                                                                                                                                                                                                                                                            // Block collisions (the key fix)
-                                                                                                                                                                                                                                                                                                                                                        for (let i = blocks.length - 1; i >= 0; i--) {
-                                                                                                                                                                                                                                                                                                                                                                            const block = blocks[i];
-                                                                                                                                                                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                                                                                                                                                                            const closestX = Math.max(block.x, Math.min(ball.x, block.x + block.w));
-                                                                                                                                                                                                                                                                                                                                                                                                                            const closestY = Math.max(block.y, Math.min(ball.y, block.y + block.h));
-                                                                                                                                                                                                                                                                                                                                                                                                                                            const dx = ball.x - closestX;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                            const dy = ball.y - closestY;
+function onPointerUp() {
+  if (!isAiming) return;
+  isAiming = false;
+  shootBalls();
+}
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (dx * dx + dy * dy < BALL_RADIUS * BALL_RADIUS) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    // Collision detected
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        block.hp--;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                // Eject ball to prevent getting stuck & calculate bounce
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const overlapX = BALL_RADIUS - Math.abs(dx);
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const overlapY = BALL_RADIUS - Math.abs(dy);
+function startFastForwardProgressive() {
+  if (!turnInProgress || gameOver) return;
+  fastForwardHeldStartTime = Date.now();
+  speedMultiplier = 2;
+  fastForwardInterval = setInterval(() => {
+    const timeHeld = (Date.now() - fastForwardHeldStartTime) / 1000;
+    let newSpeed = 2 + (timeHeld * SPEED_INCREMENT_RATE);
+    speedMultiplier = Math.min(newSpeed, MAX_SPEED_MULTIPLIER);
+  }, SPEED_UPDATE_INTERVAL);
+}
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if (overlapX < overlapY) { // Horizontal collision
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ball.vx *= -1;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ball.x += ball.vx > 0 ? overlapX : -overlapX;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                } else { // Vertical collision
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ball.vy *= -1;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ball.y += ball.vy > 0 ? overlapY : -overlapY;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
+function stopFastForwardProgressive() {
+  clearInterval(fastForwardInterval);
+  speedMultiplier = 1;
+  fastForwardHeldStartTime = 0;
+}
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (block.hp <= 0) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    blocks.splice(i, 1);
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            break; // A ball hits only one block per frame
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                    });
-
-                                                                                                                                                                                                                                                            // Filter out balls that have fallen off the bottom
-                                                                                                                                                                                                                                                                    const returningBalls = balls.filter(b => b.y - BALL_RADIUS < H);
-                                                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                                                    // Check if the turn has ended
-                                                                                                                                                                                                                                                                                            if (turnInProgress && balls.length > 0 && returningBalls.length === 0) {
-                                                                                                                                                                                                                                                                                                            shooterX = balls[0].x; // Set next shooter position to where first ball landed
-                                                                                                                                                                                                                                                                                                                        if (shooterX < BALL_RADIUS) shooterX = BALL_RADIUS;
-                                                                                                                                                                                                                                                                                                                                    if (shooterX > W - BALL_RADIUS) shooterX = W - BALL_RADIUS;
-
-                                                                                                                                                                                                                                                                                                                                                balls = [];
-                                                                                                                                                                                                                                                                                                                                                            turnInProgress = false;
-                                                                                                                                                                                                                                                                                                                                                                        canShoot = true;
-                                                                                                                                                                                                                                                                                                                                                                                    addNewRow();
-                                                                                                                                                                                                                                                                                            } else {
-                                                                                                                                                                                                                                                                                                            balls = returningBalls;
-                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                }
-
-                                                                                                                                                                                                                                    function draw() {
-                                                                                                                                                                                                                                                ctx.clearRect(0, 0, W, H);
-
-                                                                                                                                                                                                                                                        // Draw Aim Line
-                                                                                                                                                                                                                                                                if (canShoot && !turnInProgress) {
-                                                                                                                                                                                                                                                                                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                                                                                                                                                                                                                                                                                            ctx.lineWidth = 2;
-                                                                                                                                                                                                                                                                                                        ctx.beginPath();
-                                                                                                                                                                                                                                                                                                                    ctx.moveTo(shooterX, H - 20);
-                                                                                                                                                                                                                                                                                                                                ctx.lineTo(shooterX + Math.cos(aimAngle) * 60, H - 20 + Math.sin(aimAngle) * 60);
-                                                                                                                                                                                                                                                                                                                                            ctx.stroke();
-                                                                                                                                                                                                                                                                }
-
-                                                                                                                                                                                                                                                                        // Draw Blocks
-                                                                                                                                                                                                                                                                                ctx.textAlign = 'center';
-                                                                                                                                                                                                                                                                                        ctx.textBaseline = 'middle';
-                                                                                                                                                                                                                                                                                                ctx.font = `${Math.round(blockSize / 3)}px sans-serif`;
-                                                                                                                                                                                                                                                                                                        blocks.forEach(b => {
-                                                                                                                                                                                                                                                                                                                        ctx.fillStyle = `hsl(0, 0%, ${15 + b.hp * 2}%)`; // Color slightly changes with HP
-                                                                                                                                                                                                                                                                                                                                    ctx.fillRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
-                                                                                                                                                                                                                                                                                                                                                ctx.fillStyle = '#fff';
-                                                                                                                                                                                                                                                                                                                                                            ctx.fillText(b.hp, b.x + b.w / 2, b.y + b.h / 2);
-                                                                                                                                                                                                                                                                                                        });
-
-                                                                                                                                                                                                                                                                                                                // Draw Balls
-                                                                                                                                                                                                                                                                                                                        ctx.fillStyle = '#0ff';
-                                                                                                                                                                                                                                                                                                                                balls.forEach(b => {
-                                                                                                                                                                                                                                                                                                                                                ctx.beginPath();
-                                                                                                                                                                                                                                                                                                                                                            ctx.arc(b.x, b.y, BALL_RADIUS, 0, Math.PI * 2);
-                                                                                                                                                                                                                                                                                                                                                                        ctx.fill();
-                                                                                                                                                                                                                                                                                                                                });
-                                                                                                                                                                                                                                                                                                                                        
-                                                                                                                                                                                                                                                                                                                                                // Draw Shooter position
-                                                                                                                                                                                                                                                                                                                                                        if (canShoot && !turnInProgress) {
-                                                                                                                                                                                                                                                                                                                                                                        ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
-                                                                                                                                                                                                                                                                                                                                                                                    ctx.beginPath();
-                                                                                                                                                                                                                                                                                                                                                                                                ctx.arc(shooterX, H - 20, BALL_RADIUS + 2, 0, Math.PI * 2);
-                                                                                                                                                                                                                                                                                                                                                                                                            ctx.fill();
-                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                    }
-
-                                                                                                                                                                                                                                        function gameLoop() {
-                                                                                                                                                                                                                                                    update();
-                                                                                                                                                                                                                                                            draw();
-                                                                                                                                                                                                                                                                    if (!gameOver) {
-                                                                                                                                                                                                                                                                                    requestAnimationFrame(gameLoop);
-                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                        }
-
-                                                                                                                                                                                                                                            // --- EVENT HANDLERS ---
-                                                                                                                                                                                                                                                let isAiming = false;
-
-                                                                                                                                                                                                                                                    function getAimAngle(e) {
-                                                                                                                                                                                                                                                                const rect = canvas.getBoundingClientRect();
-                                                                                                                                                                                                                                                                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                                                                                                                                                                                                                                                                                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                                                                                                                                                                                                                                                                                        const dx = (clientX - rect.left) - shooterX;
-                                                                                                                                                                                                                                                                                                const dy = (clientY - rect.top) - (H - 20);
-                                                                                                                                                                                                                                                                                                        let angle = Math.atan2(dy, dx);
-                                                                                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                                                                                        // Clamp angle to the upper hemisphere
-                                                                                                                                                                                                                                                                                                                                if (angle > -0.1) angle = -0.1;
-                                                                                                                                                                                                                                                                                                                                        if (angle < -Math.PI + 0.1) angle = -Math.PI + 0.1;
-                                                                                                                                                                                                                                                                                                                                                return angle;
-                                                                                                                                                                                                                                                    }
-
-                                                                                                                                                                                                                                                        function onPointerDown(e) {
-                                                                                                                                                                                                                                                                    if (!canShoot || turnInProgress || gameOver) return;
-                                                                                                                                                                                                                                                                            isAiming = true;
-                                                                                                                                                                                                                                                                                    aimAngle = getAimAngle(e);
-                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                            function onPointerMove(e) {
-                                                                                                                                                                                                                                                                        if (!isAiming) return;
-                                                                                                                                                                                                                                                                                aimAngle = getAimAngle(e);
-                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                function onPointerUp(e) {
-                                                                                                                                                                                                                                                                            if (!isAiming) return;
-                                                                                                                                                                                                                                                                                    isAiming = false;
-                                                                                                                                                                                                                                                                                            shootBalls();
-                                                                                                                                                                                                                                                                }
-
-                                                                                                                                                                                                                                                                    // --- INITIALIZE ---
-                                                                                                                                                                                                                                                                        window.addEventListener('resize', resize);
-                                                                                                                                                                                                                                                                            restartBtn.addEventListener('click', init);
-                                                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                                                    canvas.addEventListener('mousedown', onPointerDown);
-                                                                                                                                                                                                                                                                                        canvas.addEventListener('mousemove', onPointerMove);
-                                                                                                                                                                                                                                                                                            canvas.addEventListener('mouseup', onPointerUp);
-                                                                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                                                                    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onPointerDown(e); }, { passive: false });
-                                                                                                                                                                                                                                                                                                        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); onPointerMove(e); }, { passive: false });
-                                                                                                                                                                                                                                                                                                            canvas.addEventListener('touchend', onPointerUp);
-                                                                                                                                                                                                                                                                                                                canvas.addEventListener('touchcancel', onPointerUp);
-
-                                                                                                                                                                                                                                                                                                                    init();
-                                                                                                                })();
-                                                                                                                </script>
-                                                                                                                </body>
-                                                                                                                </html>
-                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                })
-                                                                                                                                                                                                                                                                                                        })
-                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                    })
-                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                                })
-                                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                    })
-                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                                                                                                                })}
-                                                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                            }
-                                                                                                                                                                                                    }
-                                                                                                                                                                                            }
-                                                                                                                })
+menuContainer.addEventListener('click', e => {
+  if (e.target.tagName === 'BUTTON') {
+    startGame(e.target.dataset.difficulty);
+  }
+});
+restartBtn.addEventListener('click', showMenu);
+window.addEventListener('resize', resize);
+canvas.addEventListener('mousedown', onPointerDown);
+canvas.addEventListener('mousemove', onPointerMove);
+canvas.addEventListener('mouseup', onPointerUp);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); onPointerDown(e); }, { passive: false });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); onPointerMove(e); }, { passive: false });
+canvas.addEventListener('touchend', onPointerUp);
+fastBtn.addEventListener('mousedown', startFastForwardProgressive);
+fastBtn.addEventListener('mouseup', stopFastForwardProgressive);
+fastBtn.addEventListener('mouseleave', stopFastForwardProgressive);
+fastBtn.addEventListener('touchstart', e => { e.preventDefault(); startFastForwardProgressive(); }, { passive: false });
+fastBtn.addEventListener('touchend', stopFastForwardProgressive);
+fastBtn.addEventListener('touchcancel', stopFastForwardProgressive);
+})();
+</script>
+</body>
+</html>
